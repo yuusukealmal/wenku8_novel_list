@@ -16,7 +16,7 @@ def get_book(id):
     r = requests.get(url, headers=headers, verify=False)
     r.encoding = "gbk"
     html = r.text
-    if "错误原因：对不起，该文章不存在！" in html:
+    if "错误原因：对不起，该文章不存在！" in html or "错误原因：对不起，该文章不存在或已被删除！" in html:
         raise ValueError("")
 
     soup = bs4(html, 'lxml')
@@ -26,7 +26,7 @@ def get_book(id):
         name_tag = content.select_one('span[style*="font-size:16px"] b')
         name = name_tag.get_text(strip=True) if name_tag else "無書名"
     except:
-        name = "無書名"
+        name = None
 
     try:
         wenku_td = content.find('td', string=lambda t: t and '文库分类' in t)
@@ -35,11 +35,11 @@ def get_book(id):
     except:
         info_tds = []
 
-    publish = "未知分類"
-    author = "未知作者"
-    state = "未知狀態"
-    last_update = "未知時間"
-    length = "未知長度"
+    publish = None
+    author = None
+    state = None
+    last_update = None
+    length = None
     try:
         publish = info_tds[0].get_text(strip=True).replace("文库分类：", "")
     except:
@@ -69,7 +69,7 @@ def get_book(id):
         img_tag = content.find('img')
         img = img_tag['src'] if img_tag else ''
     except:
-        img = ''
+        img = None
 
     try:
         description_span = content.select('span[style*="font-size:14px;"]')
@@ -77,13 +77,13 @@ def get_book(id):
         lines = re.sub(r'<br\s*/?>', '\n', raw_html, flags=re.IGNORECASE).splitlines()
         description = '\n'.join(line.strip() for line in lines if line.strip())
     except:
-        description = '無簡介'
+        description = None
 
     try:
         content_anchor = content.find('a', string='小说目录')
         content = content_anchor['href'] if content_anchor else ""
     except:
-        content = ""
+        content = None
 
     tags = []
     try:
@@ -109,23 +109,25 @@ def get_book(id):
     }
 
 
-def worker(id):
-    try:
-        return get_book(id)
-    except ValueError:
-        return None
-    except Exception as e:
-        print(f"Error on {id} {e}")
+a = get_book(1531)
+print(str(a).replace("'",'"'))
+# def worker(id):
+#     try:
+#         return get_book(id)
+#     except ValueError:
+#         return None
+#     except Exception as e:
+#         print(f"Error on {id} {e}")
 
-def main():
-    with Pool() as p:
-        results = p.map(worker, range(1, 9999))
-    results = [r for r in results if r is not None]
-    results.sort(key=lambda x: x['id'])
+# def main():
+#     with Pool() as p:
+#         results = p.map(worker, range(1, 9999))
+#     results = [r for r in results if r is not None]
+#     results.sort(key=lambda x: x['id'])
 
-    with open("novel.json", "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
+#     with open("novel.json", "w", encoding="utf-8") as f:
+#         json.dump(results, f, ensure_ascii=False, indent=2)
 
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()
