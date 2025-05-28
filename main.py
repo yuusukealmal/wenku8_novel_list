@@ -123,7 +123,7 @@ def main():
     results = [r for r in results if r is not None]
     results.sort(key=lambda x: x['id'])
 
-    with open("result.json", "w", encoding="utf-8") as f:
+    with open("novel.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
 
