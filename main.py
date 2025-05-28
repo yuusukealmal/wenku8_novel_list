@@ -109,25 +109,23 @@ def get_book(id):
     }
 
 
-a = get_book(1531)
-print(str(a).replace("'",'"'))
-# def worker(id):
-#     try:
-#         return get_book(id)
-#     except ValueError:
-#         return None
-#     except Exception as e:
-#         print(f"Error on {id} {e}")
+def worker(id):
+    try:
+        return get_book(id)
+    except ValueError:
+        return None
+    except Exception as e:
+        print(f"Error on {id} {e}")
 
-# def main():
-#     with Pool() as p:
-#         results = p.map(worker, range(1, 9999))
-#     results = [r for r in results if r is not None]
-#     results.sort(key=lambda x: x['id'])
+def main():
+    with Pool() as p:
+        results = p.map(worker, range(1, 9999))
+    results = [r for r in results if r is not None]
+    results.sort(key=lambda x: x['id'])
 
-#     with open("novel.json", "w", encoding="utf-8") as f:
-#         json.dump(results, f, ensure_ascii=False, indent=2)
+    with open("novel.json", "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
 
 
-# if __name__ == '__main__':
-#     main()
+if __name__ == '__main__':
+    main()
