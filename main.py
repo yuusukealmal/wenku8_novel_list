@@ -4,8 +4,9 @@ from multiprocessing import Pool
 import requests
 import urllib3
 from bs4 import BeautifulSoup as bs4
+from opencc import OpenCC
 
-
+cc = OpenCC('s2t')
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:62.0) Gecko/20100101 Firefox/62.0',
@@ -96,16 +97,16 @@ def get_book(id):
 
     return {
         'id': id,
-        'name': name,
-        'publish': publish,
-        'author': author,
-        'status': state,
-        'description': description,
+        'name': cc.convert(name),
+        'publish': cc.convert(publish),
+        'author': cc.convert(author),
+        'status': cc.convert(state),
+        'description': cc.convert(description),
         'last_update': last_update,
         'length': length,
         'thumbnail': img,
         'contents': content,
-        'tags': tags
+        'tags': [cc.convert(tag) for tag in tags]
     }
 
 
