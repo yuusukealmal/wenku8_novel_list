@@ -1,132 +1,163 @@
-import re
+import time
 import json
-from multiprocessing import Pool
-import requests
+import enum
+import base64
 import urllib3
-from bs4 import BeautifulSoup as bs4
+import requests
+import datetime
 from opencc import OpenCC
+from multiprocessing import Pool
+from bs4 import BeautifulSoup as bs4
+from xml.etree import ElementTree as ET
 
-cc = OpenCC('s2t')
+
+cc = OpenCC("s2t")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:62.0) Gecko/20100101 Firefox/62.0',
-}
 
-def get_book(id):
-    url = f'https://www.wenku8.net/book/{id}.htm'
-    r = requests.get(url, headers=headers, verify=False)
-    r.encoding = "gbk"
-    html = r.text
-    if "错误原因：对不起，该文章不存在！" in html or "错误原因：对不起，该文章不存在或已被删除！" in html:
-        raise ValueError("")
 
-    soup = bs4(html, 'lxml')
-    content = soup.find('div', id='content')
+class Novel:
+    class TYPE(enum.Enum):
+        METADATA = enum.auto()
+        DESCRIPTION = enum.auto()
 
+    def __init__(self, aid: str):
+        self.aid = aid
+        self.base_url = "http://app.wenku8.com/android.php"
+        self.web_url = "https://www.wenku8.net/book/{}.htm"
+        self.version = "1.13"
+        self.headers = {
+            "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 11; IN2010 Build/RP1A.201005.001)",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+
+    def encode_base64(self, b: str):
+        return base64.b64encode(b.encode("utf-8")).decode("utf-8")
+
+    def get_encrypted_map(self, s):
+        params = {}
+        params["appver"] = self.version
+        params["request"] = self.encode_base64(s)
+        params["timetoken"] = str(int(time.time() * 1000))
+        return params
+
+    def get_encrypted_cv(self, s):
+        data = self.get_encrypted_map(s)
+        return dict(data)
+
+    def get_text(self, root, path):
+        try:
+            return root.find(path).text
+        except Exception:
+            return None
+
+    def get_attr(self, root, path, attr):
+        try:
+            return root.find(path).get(attr)
+        except Exception:
+            return None
+
+    def get_novel_full_metadata(self):
+        return self.get_encrypted_map(f"action=book&do=meta&aid={self.aid}&t=1")
+
+    def get_novel_full_description(self):
+        return self.get_encrypted_map(f"action=book&do=intro&aid={self.aid}&t=1")
+
+    def get_image(self):
+        r = requests.get(
+            self.web_url.format(self.aid),
+            headers=self.headers,
+            verify=False,
+        )
+        r.encoding = "gbk"
+        html = r.text
+        if (
+            "错误原因：对不起，该文章不存在！" in html
+            or "错误原因：对不起，该文章不存在或已被删除！" in html
+        ):
+            raise ValueError("")
+        try:
+            soup = bs4(html, "lxml")
+            content = soup.find("div", id="content")
+            img_tag = content.find("img")
+            img = img_tag["src"] if img_tag else None
+        except:
+            img = None
+
+        return img
+
+    def psot(self, type: TYPE):
+        data = {
+            Novel.TYPE.METADATA: self.get_novel_full_metadata,
+            Novel.TYPE.DESCRIPTION: self.get_novel_full_description,
+        }
+
+        if type in data:
+            return requests.post(
+                self.base_url,
+                data=data[type](),
+                headers=self.headers,
+            )
+
+    def to_dict(self):
+        metadata = self.psot(Novel.TYPE.METADATA)
+        if (
+            "錯誤原因：對不起，該文章不存在！" in metadata.text
+            or "錯誤原因：對不起，該文章不存在或已被刪除！" in metadata.text
+        ):
+            raise ValueError("")
+
+        root = ET.fromstring(metadata.text)
+        title = self.get_text(root, "data[@name='Title']")
+        author = self.get_attr(root, "data[@name='Author']", "value")
+        publish = self.get_attr(root, "data[@name='PressId']", "value")
+        thumbnail = self.get_image()
+        status = self.get_attr(root, "data[@name='BookStatus']", "value")
+        length = self.get_attr(root, "data[@name='BookLength']", "value")
+        last_update = self.get_attr(root, "data[@name='LastUpdate']", "value")
+        last_section = self.get_text(root, "data[@name='LatestSection']")
+        raw_tags = self.get_attr(root, "data[@name='Tags']", "value")
+        tags = raw_tags.split() if raw_tags else []
+        description = self.psot(Novel.TYPE.DESCRIPTION)
+
+        return {
+            "aid": self.aid,
+            "title": cc.convert(title) if title else None,
+            "author": cc.convert(author) if author else None,
+            "publish": cc.convert(publish) if publish else None,
+            "thumbnail": thumbnail,
+            "status": cc.convert(status) if status else None,
+            "length": length,
+            "last_update": last_update,
+            "last_section": cc.convert(last_section) if last_section else None,
+            "tags": [cc.convert(tag) for tag in tags] if tags else [],
+            "description": cc.convert(description.text.strip())
+            if description
+            else None,
+        }
+
+
+def worker(aid):
     try:
-        name_tag = content.select_one('span[style*="font-size:16px"] b')
-        name = name_tag.get_text(strip=True) if name_tag else "無書名"
-    except:
-        name = None
-
-    try:
-        wenku_td = content.find('td', string=lambda t: t and '文库分类' in t)
-        info_tr = wenku_td.find_parent('tr') if wenku_td else None
-        info_tds = info_tr.find_all('td') if info_tr else []
-    except:
-        info_tds = []
-
-    publish = None
-    author = None
-    state = None
-    last_update = None
-    length = None
-    try:
-        publish = info_tds[0].get_text(strip=True).replace("文库分类：", "")
-    except:
-        pass
-
-    try:
-        author = info_tds[1].get_text(strip=True).replace("小说作者：", "")
-    except:
-        pass
-
-    try:
-        state = info_tds[2].get_text(strip=True).replace("文章状态：", "")
-    except:
-        pass
-
-    try:
-        last_update = info_tds[3].get_text(strip=True).replace("最后更新：", "")
-    except:
-        pass
-
-    try:
-        length = info_tds[4].get_text(strip=True).replace("全文长度：", "")
-    except:
-        pass
-
-    try:
-        img_tag = content.find('img')
-        img = img_tag['src'] if img_tag else ''
-    except:
-        img = None
-
-    try:
-        description_span = content.select('span[style*="font-size:14px;"]')
-        raw_html = description_span[-1].decode_contents()
-        lines = re.sub(r'<br\s*/?>', '\n', raw_html, flags=re.IGNORECASE).splitlines()
-        description = '\n'.join(line.strip() for line in lines if line.strip())
-    except:
-        description = None
-
-    try:
-        content_anchor = content.find('a', string='小说目录')
-        content = content_anchor['href'] if content_anchor else ""
-    except:
-        content = None
-
-    tags = []
-    try:
-        tag_span = soup.find('span', string=lambda text: text and 'Tags' in text)
-        if tag_span:
-            tags_text = tag_span.get_text(strip=True)
-            tags = tags_text.split('：')[-1].split()
-    except:
-        pass
-
-    return {
-        'id': id,
-        'name': cc.convert(name),
-        'publish': cc.convert(publish),
-        'author': cc.convert(author),
-        'status': cc.convert(state),
-        'description': cc.convert(description),
-        'last_update': last_update,
-        'length': length,
-        'thumbnail': img,
-        'contents': content,
-        'tags': [cc.convert(tag) for tag in tags]
-    }
-
-
-def worker(id):
-    try:
-        return get_book(id)
+        return Novel(aid).to_dict()
     except ValueError:
         return None
     except Exception as e:
-        print(f"Error on {id} {e}")
+        print(f"Error on {aid} {e}")
+
 
 def main():
     with Pool() as p:
         results = p.map(worker, range(1, 9999))
     results = [r for r in results if r is not None]
-    results.sort(key=lambda x: x['id'])
+    results.sort(key=lambda x: x["aid"])
 
     with open("novel.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    today = datetime.date.today()
+    start = time.time()
     main()
+    duration = time.time() - start
+    print(f"{today} Finish Update in {duration:.2f}s")
