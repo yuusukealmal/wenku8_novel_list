@@ -1,3 +1,4 @@
+import os
 import time
 import json
 import enum
@@ -65,8 +66,10 @@ class Novel:
         return self.get_encrypted_map(f"action=book&do=cover&aid={self.aid}")
 
     def get_image(self):
-        response = self.psot(Novel.TYPE.COVER)
         fp = f"cover_{self.aid}.jpg"
+        if os.path.exists(f"./cover/{fp}"):
+            return fp
+        response = self.psot(Novel.TYPE.COVER)
         if response.status_code == 200:
             with open(f"./cover/{fp}", "wb") as f:
                 f.write(response.content)
