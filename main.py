@@ -7,7 +7,6 @@ import requests
 import datetime
 from opencc import OpenCC
 from multiprocessing import Pool
-from bs4 import BeautifulSoup as bs4
 from xml.etree import ElementTree as ET
 
 
@@ -19,11 +18,11 @@ class Novel:
     class TYPE(enum.Enum):
         METADATA = enum.auto()
         DESCRIPTION = enum.auto()
+        COVER = enum.auto()
 
     def __init__(self, aid: str):
         self.aid = aid
         self.base_url = "http://app.wenku8.com/android.php"
-        self.web_url = "https://www.wenku8.net/book/{}.htm"
         self.version = "1.13"
         self.headers = {
             "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 11; IN2010 Build/RP1A.201005.001)",
@@ -62,33 +61,23 @@ class Novel:
     def get_novel_full_description(self):
         return self.get_encrypted_map(f"action=book&do=intro&aid={self.aid}&t=1")
 
-    def get_image(self):
-        r = requests.get(
-            self.web_url.format(self.aid),
-            headers=self.headers,
-            verify=False,
-        )
-        r.encoding = "gbk"
-        html = r.text
-        if (
-            "错误原因：对不起，该文章不存在！" in html
-            or "错误原因：对不起，该文章不存在或已被删除！" in html
-        ):
-            raise ValueError("")
-        try:
-            soup = bs4(html, "lxml")
-            content = soup.find("div", id="content")
-            img_tag = content.find("img")
-            img = img_tag["src"] if img_tag else None
-        except:
-            img = None
+    def get_novel_cover(self):
+        return self.get_encrypted_map(f"action=book&do=cover&aid={self.aid}")
 
-        return img
+    def get_image(self):
+        response = self.psot(Novel.TYPE.COVER)
+        if response.status_code == 200:
+            with open(f"./cover/Cover_{self.aid}.jpg", "wb") as f:
+                f.write(response.content)
+            return f"cover_{self.aid}.jpg"
+        else:
+            return None
 
     def psot(self, type: TYPE):
         data = {
             Novel.TYPE.METADATA: self.get_novel_full_metadata,
             Novel.TYPE.DESCRIPTION: self.get_novel_full_description,
+            Novel.TYPE.COVER: self.get_novel_cover,
         }
 
         if type in data:
