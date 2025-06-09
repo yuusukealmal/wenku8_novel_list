@@ -66,10 +66,11 @@ class Novel:
 
     def get_image(self):
         response = self.psot(Novel.TYPE.COVER)
+        fp = f"cover_{self.aid}.jpg"
         if response.status_code == 200:
-            with open(f"./cover/Cover_{self.aid}.jpg", "wb") as f:
+            with open(f"./cover/{fp}", "wb") as f:
                 f.write(response.content)
-            return f"cover_{self.aid}.jpg"
+            return fp
         else:
             return None
 
